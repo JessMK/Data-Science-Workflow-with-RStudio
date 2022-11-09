@@ -1,0 +1,493 @@
+## load packages:
+
+#install.packages("readxl")
+library(readxl)
+
+#install.packages("tidyverse")
+library(tidyverse)
+
+#install.packages("tidycensus")
+library(tidycensus)
+
+
+## change working directory:
+
+setwd("C:/Users/JBIDXXX/Downloads")
+
+list.files()
+
+setwd("C:/Users/klein337/Desktop/RWorkshop")
+
+## option 1: load datasets, from drive, and investigate the contents
+## 2020 Census population, 2019 Census population, ACS poverty 2019 datasets
+
+Census2020 <- read_excel("2020 Census File.xlsx")
+
+
+ACS2019 <- read_csv("2019Pop.csv")
+
+
+Poverty2019 <- read_csv("2019Poverty.csv")
+
+
+## use tidycensus to get Decennial and ACS data 
+
+## load your API key:
+
+census_api_key("PUT YOUR KEY IN HERE",
+               overwrite = FALSE, install = TRUE)
+
+
+## available 2020 Census variables
+## https://www.census.gov/data/developers/data-sets/decennial-census.html
+
+vars20 <- load_variables(2020, "pl")
+
+print(vars20, n = 301)
+
+View(vars20)
+
+
+## available 2010 Census variables
+## https://www.census.gov/data/developers/data-sets/decennial-census/2010.html
+
+vars10 <- load_variables(2010, "sf1")
+
+print(vars10, n = 9099)
+
+View(vars10)
+
+
+## available ACS variables, 
+## https://www.census.gov/data/developers/data-sets/acs-5year/2019.html
+
+all_vars_acs5 <-
+  load_variables(year = 2019, dataset = "acs5")
+
+View(all_vars_acs5)
+
+
+## load 2020 Census population
+
+pop2020 <- get_decennial(
+  geography = "state",
+  variables = "P1_001N",
+  year = 2020) %>%
+  mutate(year = 2020, variable = "population")
+
+
+## load 2019 ACS population 
+
+acs2019 <- get_acs(
+  geography = "state",
+  variables = "B01001_001",
+  year = 2019) %>%
+  rename(value = "estimate") %>%
+  mutate(year = 2019, variable = "population")
+
+
+## load 2019 ACS poverty 
+
+pov19 <- get_acs(
+  "state",
+  variables = c("B17001_001", "B17001_002", "B17001_031"),
+  year = 2019,
+  survey = "acs1"
+) %>% 
+  select(-moe) %>% 
+  spread(variable, estimate) %>% 
+  rename(
+    "pov_univ" = "B17001_001",
+    "poor" = "B17001_002",
+    "not_poor" = "B17001_031",) %>%
+  mutate(year = 2019, variable = "poverty")
+
+
+## part 1: intro to dplyr commands: 
+## select, rename, filter, arrange, mutate, and summarize-----------------------   
+
+## select function- drop columns C, D, E, G, H, I, as there is 
+## no need to include 2010 data when we have more recent 2019 data
+
+## there are two options, keep or drop variables 
+
+## keep variables
+
+Census2020Sub <- Census2020 %>%
+  select(Area,
+         '2020 Census Resident Population',
+         'Numeric Change',
+         'Percent Change',
+         'State Rank Based on 2020 Census Resident Population')
+  
+Census2020Sub
+
+## drop variables
+
+Census2020SubOpt2 <- Census2020 %>%
+  select(-c('2010 Census Resident Population',
+            'State Rank Based on 2010 Census Resident Population',
+            'State Rank Based on Percent Change'))
+
+Census2020SubOpt2
+
+## rename function- rename renaming columns to simple names
+
+Census2020Sub <- Census2020Sub %>%
+  rename(State = Area,
+         Pop2020 = '2020 Census Resident Population',
+         NumChange2020 = 'Numeric Change',
+         PercentChange2020 = 'Percent Change',
+         StateRank = 'State Rank Based on 2020 Census Resident Population')
+
+## bonus1, combine select and rename
+
+Census2020Bonus1 <- Census2020 %>%
+  select('Area',
+         '2020 Census Resident Population',
+         '2010 Census Resident Population') %>%
+  rename(State = Area,
+         Pop2020 = '2020 Census Resident Population',
+         Pop2010 = '2010 Census Resident Population')
+
+
+## filter function- filter states which are over or below 9,999,999 
+## population. only 10 states will remain in over and the rest in below
+
+PopAboveLimit <- Census2020Sub %>%
+  filter(Pop2020 > 9999999)
+
+PopBelowLimit <- Census2020Sub %>%
+  filter(Pop2020 <= 9999999)
+
+dim(PopAboveLimit)
+
+dim(PopBelowLimit)
+
+
+## using AND/OR
+
+PopAboveLimitAND <- Census2020Sub %>%
+  filter(Pop2020 > 9999999 & StateRank >= 9)
+
+dim(PopAboveLimitAND)
+
+PopAboveLimitOR <- Census2020Sub %>%
+  filter(Pop2020 > 9999999 | StateRank > 50)
+
+dim(PopAboveLimiOR)
+
+
+## arrange function- arrange the dataset by population count in 2020, 
+## in descending order, and verify this matches population ranking
+
+## data science question: what are the largest and smallest  
+## populated states in our two new datasets?
+
+## states with population above and below the set limit, ordered ascending:
+
+TopPopAsce <- PopAboveLimit %>%
+  arrange(StateRank)
+
+LowPopAsce <- PopBelowLimit %>%
+  arrange(StateRank)
+
+head(LowPopAsce)
+
+## states with population above and below the set limit, ordered descending:
+
+TopPopDesc <- PopAboveLimit %>%
+  arrange(desc(StateRank))
+
+LowPopDesc <- PopBelowLimit %>%
+  arrange(desc(StateRank))
+
+
+## bonus2, combine Filter and Arrange
+
+str(Census2020Sub)
+
+Census2020Sub$StateRank <- as.numeric(Census2020Sub$StateRank, na.rm = TRUE)
+
+Census2020Bonus2 <- Census2020Sub %>%
+  filter(StateRank >=10 & StateRank <= 30) %>%
+  arrange(desc(Pop2020))
+
+Census2020Bonus3 <- Census2020 %>%
+  select('Area',
+         '2020 Census Resident Population',
+         '2010 Census Resident Population') %>%
+  rename(State = Area,
+         Pop2020 = '2020 Census Resident Population',
+         Pop2010 = '2010 Census Resident Population') %>%
+  filter(Pop2020 > 9999999) %>%
+  arrange(desc(Pop2020))
+
+## mutate function- recreate the 2010 population column by adding a new variable
+## that calculates 2010 population using the numeric change column
+
+Census2020Mutate <- Census2020Sub %>%
+  mutate(Pop2010 = Pop2020-NumChange2020)
+
+head(Census2020Mutate)
+
+Census2020Mutate$Pop2010
+
+View(Census2020Mutate)
+
+Census2020Mutate <- Census2020Mutate %>%
+  select(State, Pop2020, Pop2010, NumChange2020, PercentChange2020, StateRank)
+
+## summarise function- sum the population in the US in both 2020 and 2010. 
+
+Census2020PopSum <- Census2020Mutate %>%
+  summarise(Total2020 = sum(Pop2020))
+
+Census2020PopSum
+
+Census2010PopSum <- Census2020Mutate %>%
+  summarise(Total2010 = sum(Pop2010))
+
+Census2010PopSum
+
+
+## bonus3, calculate the mean population in 2020 and 2010 
+
+Census2020PopMean <- Census2020Mutate %>%
+  summarise(Total2020 = mean(Pop2020))
+
+Census2020PopMean
+
+Census2010PopMean <- Census2020Mutate %>%
+  summarise(Total2010 = mean(Pop2010))
+
+Census2010PopMean
+
+
+## bonus4, calculate the difference of the sum and mean between 2020 and 2010
+
+Census2020PopSum - Census2010PopSum
+
+Census2020PopMean - Census2010PopMean
+
+
+## bonus5, calculate the sum of large States
+
+PopAboveLimitSum <- PopAboveLimit %>% 
+  summarize(TotalLarge2020 = sum(Pop2020))
+
+PopAboveLimitSum
+
+## bonus6, calculate the sum of small States
+
+PopBelowLimitSum <- PopBelowLimit %>% 
+  summarize(TotalSmall2020 = sum(Pop2020))
+
+PopBelowLimitSum
+
+
+## mutate, summarise and group_by function example 1- group rows by a 
+## column value, to perform functions on grouped data
+
+Census2020Size <- Census2020Mutate %>%
+  mutate(size = case_when(Pop2020 > 9999999 ~ 'Big',
+                          Pop2020 <= 9999999 ~ 'Small')) %>%
+  group_by(size) %>%
+  summarize(size = sum(Pop2020))
+
+## mutate, summarise and group_by function example 2- group rows by a 
+## column value, to perform functions on grouped data
+
+Census2020Growth <- Census2020Mutate %>%
+  mutate(growth = case_when(NumChange2020 > 0 ~ 'growth',
+                            NumChange2020 < 0 ~ 'decline')) %>%
+  group_by(growth)%>%
+  summarise(changetot = sum(Pop2020))
+
+## count the number of observations in a group
+
+Census2020Mutate %>%
+  mutate(size = case_when(Pop2020 > 9999999 ~ 'Big',
+                          Pop2020 <= 9999999 ~ 'Small')) %>%
+  count(size)
+
+
+Census2020Mutate %>%
+  mutate(growth = case_when(NumChange2020 > 0 ~ 'growth',
+                            NumChange2020 < 0 ~ 'decline')) %>%
+  group_by(growth)%>%
+  count()
+
+
+## count a slightly different way, gives the same output
+
+
+
+## part 2, using join and putting it all together---------------------------------
+
+## join 2020 with the two 2019 ACS datasets, 2019Pop and 2019Poverty, by state
+
+## two ways, use left_join or cbind (column bind)
+
+CensusData1 <- left_join(Census2020Sub, Census2019, by = "State")
+
+colnames(CensusData1)
+
+## generic "estimate" name will be a problem, rename to something specific 
+
+CensusData1 <- CensusData1 %>% 
+  rename(PopEstimate2019 = Estimate)
+  
+CensusData1 <- left_join(CensusData1, Poverty2019, by = "State")
+
+colnames(CensusData1)
+
+## or drop Puerto Rico and use cbind
+
+CensusData2 <- as.data.frame(Census2019) %>%
+  filter(!State %in% c('Puerto Rico')) %>%
+  rename(StateDrop = State, PopEstimate2019 = Estimate)
+
+CensusData2 <- cbind(Census2020Sub, CensusData2) %>%
+  select(-c('StateDrop'))
+
+Poverty2019ACS <- as.data.frame(Poverty2019) %>%
+  filter(!State %in% c('Puerto Rico')) %>%
+  rename(StateDrop = State)
+
+CensusData2 <- cbind(CensusData2, Poverty2019ACS) %>%
+  select(-c('StateDrop'))
+
+## verify they are the same data
+
+colnames(CensusData1)
+
+colnames(CensusData2)
+
+
+## try rbind example (row bind)
+
+Census2020 <- CensusData1 %>%
+  select(State, Pop2020) %>%
+  rename(Pop = Pop2020) %>%
+  mutate(year = "2020")
+
+Census2019 <- CensusData1 %>%
+  select(State, PopEstimate2019) %>%
+  rename(Pop = PopEstimate2019) %>%
+  mutate(year = "2019")
+
+Census2year <- rbind(Census2020, Census2019)
+
+colnames(Census2year)
+
+rownames(Census2year)
+
+str(Census2year)
+
+## use filter and mutate functions to add a ranking variable for states 
+## based on below poverty variable and percent of poverty population
+
+CensusDataRank <- CensusData2 %>%
+  mutate(PovertyRank = dense_rank(desc(BelowPoverty))) %>%
+  mutate(PovertyPercent = 100 * (BelowPoverty/PovertyStatus)) %>%
+  filter(PovertyRank <= 10)
+
+
+## Part 3: visualize using ggplot-----------------------------------------------
+
+## basic bar chart of state population for top poverty ranked states
+
+options(scipen = 999) # Disable scientific notation
+
+ggplot(CensusDataRanked) +
+  geom_bar(mapping = aes(x = reorder(State,BelowPoverty), 
+                         y = BelowPoverty, 
+                         fill = PovertyPercent), 
+           stat = 'identity') +
+  labs(title = "States with the Highest Poverty Status, 2020",
+       x = "State",
+       y = "Poverty Status Count") + 
+  theme(plot.title = element_text (hjust = 0.5)) + 
+  coord_flip()
+
+
+## histogram of 2020 state population
+
+ggplot(CensusData2, aes(x = Pop2020)) +
+  geom_histogram(fill ='light blue', 
+                 col = 'dark blue', 
+                 bins = 15) +
+  labs(title = "Distribution of State Population, 2020",
+       x = "Population Count") +
+  theme(plot.title = element_text (hjust = 0.5))
+
+
+## boxplot of population by state size; 
+## add size change direction, state size and ranking columns first
+
+CensusData2Size <- CensusData2 %>%
+  mutate(changedir = case_when(NumChange2020 > 0 ~ 'increase',
+                               NumChange2020 < 0 ~ 'decrease')) %>%
+  mutate(size_bin = case_when(Pop2020 < 1000000 ~ 'small',
+                              Pop2020 >= 1000000 & Pop2020 <= 10000000 ~ 'medium',
+                              Pop2020 > 10000000 ~ 'large')) %>% 
+  mutate(SizeRank = dense_rank(desc(Pop2020)))
+
+
+ggplot(CensusData2Size, aes(x = size_bin, y = Pop2020)) +
+  geom_boxplot(color = 'purple', outlier.color = 'orange') +
+  labs(title = "State Population by Size, 2020",
+       x = "State Size",
+       y = "Population Count") +
+  theme(plot.title = element_text (hjust = 0.5))
+
+## bar chart of 2020 population
+
+ggplot(CensusData2Size, aes(x = reorder(State, Pop2020),
+                            y = Pop2020, fill = changedir)) +
+  geom_col() +
+  labs(title = "Population by State, 2020",
+       x = "State",
+       y = "Population Count",
+       fill = "Direction 
+       change") +
+  theme(axis.text.x = element_text(angle=90,hjust=1,vjust=0.5, size = 6))+
+  theme(plot.title = element_text (hjust = 0.5)) + 
+  coord_flip()
+
+
+## scatterplot of 2020 population
+
+ggplot(CensusData2Size, aes(x = reorder(State, Pop2020),
+                            y = Pop2020, color = changedir)) +
+  geom_point() +
+  labs(title = "Population by State, 2020",
+       x = "State",
+       y = "Population Count") +
+  theme(axis.text.x = element_text(angle=90,hjust=1,vjust=0.5, size = 6))+
+  theme(plot.title = element_text (hjust = 0.5)) +
+  coord_flip()
+
+## scatterplot of 2019 population and poverty status with lm
+
+ggplot(CensusData2Size, aes(x = PopEstimate2019,
+                            y = BelowPoverty, color = size_bin)) +
+  geom_point() +
+  geom_smooth(method = 'lm') +
+  labs(title = "Poverty Status by State Population, 2019",
+       x = "Population Count",
+       y = "Below Poverty Count") +
+  theme(axis.text.x = element_text(angle=90,hjust=1,vjust=0.5, size = 6)) +
+  theme(plot.title = element_text (hjust = 0.5))
+
+## bar chart faceted by size_bin
+
+ggplot(CensusData2Size, aes(x = reorder(State, Pop2020), 
+                            y=Pop2020, fill = size_bin))+
+  geom_col()+
+  ylab("Population Count")+
+  facet_wrap(~size_bin, scale = "free") +
+  theme(axis.text.x = element_text(angle=90,hjust=.2,vjust=0.5, size = 6)) +
+  theme(plot.title = element_text (hjust = 0.5))
+
